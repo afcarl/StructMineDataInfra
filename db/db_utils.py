@@ -274,7 +274,7 @@ class data_utils(object):
 		outputfile = open("category_entities.json", 'w')
 		category_entity = dict() 
 		with open("mesh_type_hierarchy-2016.txt") as fp:
-		 	for line in fp:
+			for line in fp:
 				mesh_id = line.split('\t', 1)[0]
 				if len(mesh_id.split('.')) == 2:
 					mesh = line.split('\t', 1)[1]
@@ -328,122 +328,142 @@ class data_utils(object):
 					query_a.append(entity_left)
 					query_b.append(entity_right)
 					query_edges.append({'source':entity_left, 'target':entity_right, 'sids':article.values(), 'sents':[]})
+
 		red_node = dict()
-		# print "query_a: ", query_a
-		# print "query_b: ", query_b
-		# print "query_edges: ", query_edges
+
 		for v in query_a:
-			tmp=self.db.query("SELECT article_title, pmid, sent FROM entity_table WHERE entity_name= '" + v + "' LIMIT " + str(num_pps))
-			red_node[v] = map(lambda x:(x['article_title'],x['sent'],x['pmid']),tmp.dictresult())
-		
+			tmp=self.db.query("SELECT article_titles, pmids, sents FROM entity_table_compressed WHERE entity_name= '" + v + "' LIMIT " + str(1))
+			dictresult = tmp.dictresult()[0]
+			red_node[v] = []
+			random_nums = random.sample(range(0, len(dictresult['article_titles'])), min(len(dictresult['article_titles']), num_pps))
+			for i in range(0, len(random_nums)):
+				red_node[v].append((dictresult['article_titles'][random_nums[i]], dictresult['sents'][random_nums[i]], dictresult['pmids'][random_nums[i]]))
+			
 		blue_node = dict()
+
 		for v in query_b:
-			tmp=self.db.query("SELECT article_title, pmid, sent FROM entity_table WHERE entity_name= '" + v + "' LIMIT " + str(num_pps)) 
-			blue_node[v] = map(lambda x:(x['article_title'],x['sent'],x['pmid']),tmp.dictresult())
-		# print "blue_node: ", blue_node
-		# print "red_node: ", red_node
+			tmp=self.db.query("SELECT article_titles, pmids, sents FROM entity_table_compressed WHERE entity_name= '" + v + "' LIMIT " + str(1))
+			dictresult = tmp.dictresult()[0]
+			blue_node[v] = []
+			random_nums = random.sample(range(0, len(dictresult['article_titles'])), min(len(dictresult['article_titles']), num_pps))
+			for i in range(0, len(random_nums)):
+				blue_node[v].append((dictresult['article_titles'][random_nums[i]], dictresult['sents'][random_nums[i]], dictresult['pmids'][random_nums[i]]))
+
 		for edge in query_edges:
 			for s_id in edge['sids'][:num_pps]:
 				tmp = self.db.query("SELECT article_title, pmid, sent FROM entity_table WHERE sent_id = '" + s_id + "' LIMIT 1")
 				edge['sents'].append(tmp.dictresult()[0])
-		json.dump({'node_a':red_node, 'node_b':blue_node, 'edge':query_edges}, open('result.json', 'w')) 
+
 		return {'node_a':red_node, 'node_b':blue_node, 'edge':query_edges} 
 	
 	def query_links_by_left_entities(self, entities_left, type_b, relation_type, num_edges, num_pps):
 		self.db.query("set statement_timeout TO 0")
-                query_string = "SELECT * FROM (SELECT entity_a,entity_b,(array_agg('[' || article_id || ',' || sent_id || ']'))[1:" + str(num_pps+2) + "] as sents FROM "+self.arg['relation_table']+" WHERE type_b_"+type_b['name']+"@>'"+ type_b['type']+"' AND relation_type='"+relation_type + "' GROUP BY entity_a,entity_b) x"
-                q = self.db.query(query_string)
+		query_string = "SELECT * FROM (SELECT entity_a,entity_b,(array_agg('[' || article_id || ',' || sent_id || ']'))[1:" + str(num_pps+2) + "] as sents FROM "+self.arg['relation_table']+" WHERE type_b_"+type_b['name']+"@>'"+ type_b['type']+"' AND relation_type='"+relation_type + "' GROUP BY entity_a,entity_b) x"
+		q = self.db.query(query_string)
 		result = q.dictresult()
 		
 		query_a = []
-                query_b = []
-                query_edges = []
+		query_b = []
+		query_edges = []
 		count = 0
-                
+				
 		for r in result:
-                        if r['entity_a'] in entities_left:
+			if r['entity_a'] in entities_left:
 				if count < int(num_edges):
 					count = count + 1
 				else:
 					break 
-				# print 'entity_a: ', r['entity_a']
-				# print 'entity_b: ', r['entity_b']
-				query_a.append(r['entity_a'])
-				query_b.append(r['entity_b'])
-				article = dict()
-				for x in r['sents']:
-					x = ast.literal_eval(x)
-					article[x[0]]=str(x[1])
-				query_edges.append({'source':r['entity_a'], 'target':r['entity_b'], 'sids':article.values(), 'sents':[]})
-               	# print 'query_a: ', query_a
-		# print 'query_b: ', query_b
-		# print 'query_edges: ', query_edges
-               	red_node = dict()
-                for v in query_a:
-                        tmp=self.db.query("SELECT article_title, pmid, sent FROM entity_table WHERE entity_name= '" + v + "' LIMIT " + str(num_pps))
-                        red_node[v] = map(lambda x:(x['article_title'],x['sent'],x['pmid']),tmp.dictresult())
-                blue_node = dict()
-                for v in query_b:
-                        tmp=self.db.query("SELECT article_title, pmid, sent FROM entity_table WHERE entity_name= '" + v + "' LIMIT " + str(num_pps))
-                        blue_node[v] = map(lambda x:(x['article_title'],x['sent'],x['pmid']),tmp.dictresult())
-                # print "blue_node: ", blue_node
-                # print "red_node: ", red_node
-                for edge in query_edges:
-                        for s_id in edge['sids'][:num_pps]:
-                                tmp = self.db.query("SELECT article_title, pmid, sent FROM entity_table WHERE sent_id = '" + s_id + "' LIMIT 1")
-                                edge['sents'].append(tmp.dictresult()[0])
-                json.dump({'node_a':red_node, 'node_b':blue_node, 'edge':query_edges}, open('result.json', 'w'))
-                return {'node_a':red_node, 'node_b':blue_node, 'edge':query_edges} 
- 	
+			query_a.append(r['entity_a'])
+			query_b.append(r['entity_b'])
+			article = dict()
+			for x in r['sents']:
+				x = ast.literal_eval(x)
+				article[x[0]]=str(x[1])
+			query_edges.append({'source':r['entity_a'], 'target':r['entity_b'], 'sids':article.values(), 'sents':[]})
+		
+		red_node = dict()
+
+		for v in query_a:
+			tmp=self.db.query("SELECT article_titles, pmids, sents FROM entity_table_compressed WHERE entity_name= '" + v + "' LIMIT " + str(1))
+			dictresult = tmp.dictresult()[0]
+			red_node[v] = []
+			random_nums = random.sample(range(0, len(dictresult['article_titles'])), min(len(dictresult['article_titles']), num_pps))
+			for i in range(0, len(random_nums)):
+				red_node[v].append((dictresult['article_titles'][random_nums[i]], dictresult['sents'][random_nums[i]], dictresult['pmids'][random_nums[i]]))
+
+		blue_node = dict()
+		
+		for v in query_b:
+			tmp=self.db.query("SELECT article_titles, pmids, sents FROM entity_table_compressed WHERE entity_name= '" + v + "' LIMIT " + str(1))
+			dictresult = tmp.dictresult()[0]
+			blue_node[v] = []
+			random_nums = random.sample(range(0, len(dictresult['article_titles'])), min(len(dictresult['article_titles']), num_pps))
+			for i in range(0, len(random_nums)):
+				blue_node[v].append((dictresult['article_titles'][random_nums[i]], dictresult['sents'][random_nums[i]], dictresult['pmids'][random_nums[i]])) 
+
+		for edge in query_edges:
+			for s_id in edge['sids'][:num_pps]:
+				tmp = self.db.query("SELECT article_title, pmid, sent FROM entity_table WHERE sent_id = '" + s_id + "' LIMIT 1")
+				edge['sents'].append(tmp.dictresult()[0])
+
+		return {'node_a':red_node, 'node_b':blue_node, 'edge':query_edges} 
+	
 	def query_links_by_right_entities(self, type_a, entities_right, relation_type, num_edges, num_pps):
-		query_a = []
-		query_b = []
-		query_edges = []
 		self.db.query("set statement_timeout TO 0")
-                query_string = "SELECT * FROM (SELECT entity_a,entity_b,(array_agg('[' || article_id || ',' || sent_id || ']'))[1:" + str(num_pps+2) + "] as sents FROM "+self.arg['relation_table']+" WHERE type_a_"+type_a['name']+"@>'"+ type_a['type']+"' AND relation_type='"+relation_type + "' GROUP BY entity_a,entity_b) x"
-                q = self.db.query(query_string)
+		query_string = "SELECT * FROM (SELECT entity_a,entity_b,(array_agg('[' || article_id || ',' || sent_id || ']'))[1:" + str(num_pps+2) + "] as sents FROM "+self.arg['relation_table']+" WHERE type_a_"+type_a['name']+"@>'"+ type_a['type']+"' AND relation_type='"+relation_type + "' GROUP BY entity_a,entity_b) x"
+		q = self.db.query(query_string)
 		print "right entities"
 		result = q.dictresult()
 		query_a = []
-                query_b = []
-                query_edges = []
+		query_b = []
+		query_edges = []
 		count = 0
-                for r in result:
-                        if r['entity_b'] in entities_right:
+		for r in result:
+			if r['entity_b'] in entities_right:
 				if count < int(num_edges):
 					count = count + 1
 				else:
-					break 
-				
-				print 'entity_a: ', r['entity_a']
-				print 'entity_b: ', r['entity_b']
-				query_a.append(r['entity_a'])
-				query_b.append(r['entity_b'])
-				article = dict()
-				for x in r['sents']:
-					x = ast.literal_eval(x)
-					article[x[0]]=str(x[1])
-				query_edges.append({'source':r['entity_a'], 'target':r['entity_b'], 'sids':article.values(), 'sents':[]})
-               	print 'query_a: ', query_a
+					break 	
+			print 'entity_a: ', r['entity_a']
+			print 'entity_b: ', r['entity_b']
+			query_a.append(r['entity_a'])
+			query_b.append(r['entity_b'])
+			article = dict()
+			for x in r['sents']:
+				x = ast.literal_eval(x)
+				article[x[0]]=str(x[1])
+			query_edges.append({'source':r['entity_a'], 'target':r['entity_b'], 'sids':article.values(), 'sents':[]})
+		print 'query_a: ', query_a
 		print 'query_b: ', query_b
 		print 'query_edges: ', query_edges
-               	red_node = dict()
-                for v in query_a:
-                        tmp=self.db.query("SELECT article_title, pmid, sent FROM entity_table WHERE entity_name= '" + v + "' LIMIT " + str(num_pps))
-                        red_node[v] = map(lambda x:(x['article_title'],x['sent'],x['pmid']),tmp.dictresult())
-                blue_node = dict()
-                for v in query_b:
-                        tmp=self.db.query("SELECT article_title, pmid, sent FROM entity_table WHERE entity_name= '" + v + "' LIMIT " + str(num_pps))
-                        blue_node[v] = map(lambda x:(x['article_title'],x['sent'],x['pmid']),tmp.dictresult())
-                # print "blue_node: ", blue_node
-                # print "red_node: ", red_node
-                for edge in query_edges:
-                        for s_id in edge['sids'][:num_pps]:
-                                tmp = self.db.query("SELECT article_title, pmid, sent FROM entity_table WHERE sent_id = '" + s_id + "' LIMIT 1")
-                                edge['sents'].append(tmp.dictresult()[0])
-                json.dump({'node_a':red_node, 'node_b':blue_node, 'edge':query_edges}, open('result.json', 'w'))
-                return {'node_a':red_node, 'node_b':blue_node, 'edge':query_edges} 
- 	
+			
+		red_node = dict()
+
+		for v in query_a:
+			tmp=self.db.query("SELECT article_titles, pmids, sents FROM entity_table_compressed WHERE entity_name= '" + v + "' LIMIT " + str(1))
+			dictresult = tmp.dictresult()[0]
+			red_node[v] = []
+			random_nums = random.sample(range(0, len(dictresult['article_titles'])), min(len(dictresult['article_titles']), num_pps))
+			for i in range(0, len(random_nums)):
+				red_node[v].append((dictresult['article_titles'][random_nums[i]], dictresult['sents'][random_nums[i]], dictresult['pmids'][random_nums[i]]))
+		
+		blue_node = dict()
+		
+		for v in query_b:
+			tmp=self.db.query("SELECT article_titles, pmids, sents FROM entity_table_compressed WHERE entity_name= '" + v + "' LIMIT " + str(1))
+			dictresult = tmp.dictresult()[0]
+			blue_node[v] = []
+			random_nums = random.sample(range(0, len(dictresult['article_titles'])), min(len(dictresult['article_titles']), num_pps))
+			for i in range(0, len(random_nums)):
+				blue_node[v].append((dictresult['article_titles'][random_nums[i]], dictresult['sents'][random_nums[i]], dictresult['pmids'][random_nums[i]]))
+
+		for edge in query_edges:
+				for s_id in edge['sids'][:num_pps]:
+						tmp = self.db.query("SELECT article_title, pmid, sent FROM entity_table WHERE sent_id = '" + s_id + "' LIMIT 1")
+						edge['sents'].append(tmp.dictresult()[0])
+
+		return {'node_a':red_node, 'node_b':blue_node, 'edge':query_edges} 
+
 	def query_links_by_categories(self, type_a, type_b, relation_type, num_edges, num_pps):
 		self.db.query("set statement_timeout TO 0")
 		query_string_v2 = "SELECT * FROM (SELECT entity_a,entity_b,(array_agg('[' || article_id || ',' || sent_id || ']'))[1:" + str(num_pps+2) + "] as sents  "+"FROM "+self.arg['relation_table']+" WHERE type_a_"+type_a['name']+"@>'"\
@@ -453,10 +473,10 @@ class data_utils(object):
 
 		temp_time = time.time() - self.start_time
 		self.start_time = time.time()
-		# print "------query time cost = ", temp_time
+		print "------query time cost = ", temp_time
 
 		result = q.dictresult()
-		# print "result length = ", len(result)
+
 		query_a = []
 		query_b = []
 		query_edges = []
@@ -474,27 +494,30 @@ class data_utils(object):
 		print "query_b: ", query_b
 
 		red_node = dict()
-		# print "len query_a = ", len(query_a), "; len query_b = ", len(query_b), "; len query_edges", len(query_edges)
+
 		for v in query_a:
-			#print "select distinct on (article_id) article_title, pmid, sent from entity_table where entity_name= '" + v['entity_a'] + "' LIMIT "+str(num_pps)
-			#print "select distinct on (article_id) article_title, pmid, sent from entity_table where entity_name= '" + v['entity_a'] + "' LIMIT 2" 
-			tmp=self.db.query("select article_title, pmid, sent from entity_table where entity_name= '" + v + "' LIMIT "+str(num_pps))
-			#tmp=self.db.query("select distinct on (article_id) article_title, pmid, sent from entity_table where entity_name= '" + v['entity_a'] + "' LIMIT "+str(num_pps))
-			red_node[v] = map(lambda x:(x['article_title'],x['sent'],x['pmid']),tmp.dictresult())
-		#query_b=self.db.query("select entity_b from "+self.identity)
+			# tmp=self.db.query("select article_title, pmid, sent from entity_table where entity_name= '" + v + "' LIMIT "+str(num_pps))
+			tmp=self.db.query("SELECT article_titles, pmids, sents FROM entity_table_compressed WHERE entity_name= '" + v + "' LIMIT " + str(1))
+			dictresult = tmp.dictresult()[0]
+			red_node[v] = []
+			random_nums = random.sample(range(0, len(dictresult['article_titles'])), min(len(dictresult['article_titles']), num_pps))
+			for i in range(0, len(random_nums)):
+				red_node[v].append((dictresult['article_titles'][random_nums[i]], dictresult['sents'][random_nums[i]], dictresult['pmids'][random_nums[i]]))
+			# red_node[v] = map(lambda x:(x['article_titles'],x['sents'],x['pmids']),tmp.dictresult())
+
 		blue_node = dict()
 		for v in query_b:
-			#pass
-			#print "select distinct on (article_id) article_title, pmid, sent from entity_table where entity_name= '" + v['entity_b'] + "' LIMIT "+str(num_pps)
-			tmp=self.db.query("select article_title, pmid, sent from entity_table where entity_name= '" + v + "' LIMIT "+str(num_pps))
-			#tmp=self.db.query("select distinct on (article_id) article_title, pmid, sent from entity_table where entity_name= '" + v['entity_b'] + "' LIMIT "+str(num_pps))
-			blue_node[v] = map(lambda x:(x['article_title'],x['sent'],x['pmid']),tmp.dictresult())
+			tmp=self.db.query("SELECT article_titles, pmids, sents FROM entity_table_compressed WHERE entity_name= '" + v + "' LIMIT " + str(1))
+			dictresult = tmp.dictresult()[0]
+			blue_node[v] = []
+			random_nums = random.sample(range(0, len(dictresult['article_titles'])), min(len(dictresult['article_titles']), num_pps))
+			for i in range(0, len(random_nums)):
+				blue_node[v].append((dictresult['article_titles'][random_nums[i]], dictresult['sents'][random_nums[i]], dictresult['pmids'][random_nums[i]]))
+
 		temp_time = time.time() - self.start_time 
 		self.start_time = time.time()
-		# print "------query entity_a and entity_b time cost = ", temp_time
+		print "------query entity_a and entity_b time cost = ", temp_time
 
-		# print "red_node: ", red_node
-		# print "blue_node: ", blue_node
 		for edge in query_edges:
 			for s_id in edge['sids'][:num_pps]:
 				tmp = self.db.query("select article_title, pmid, sent from entity_table where sent_id= '" + s_id + "' LIMIT 1")
@@ -502,18 +525,9 @@ class data_utils(object):
 		temp_time = time.time() - self.start_time 
 		self.start_time = time.time()
 		print "red_node nubmer = ", len(red_node), " blue_node number = ", len(blue_node), " edges number = ", len(query_edges)
-		# print "------query edges time cost = ", temp_time
+		print "------query edges time cost = ", temp_time
 
-		#query_edge = "SELECT DISTINCT T.entity_a as source, T.entity_b as target, E.pmid, E.article_title,E.sent FROM " + self.arg['entity_table'] + " AS E INNER JOIN "+\
-		#self.identity+" T ON E.sent_id = T.sent_id";
-		#query_edges = "SELECT distinct on (R.article_id) R.article_id, R.sent_id from " + self.arg['relation_table']+ " AS R inner join " + self.identity+  \
-		#" T on R.entity_a = T.entity_a and R.entity_b = T.entity_b and R.relation_type = \'" + relation_type +"' LIMIT " +str(num_pps)
-		#"distinct on (article_id) inner join on entity_a, entity_b, relation_type"
-		#q = self.db.query(query_edge)
-		#self.db.query("drop table "+self.identity)
-                json.dump({'node_a':red_node, 'node_b':blue_node, 'edge':query_edges}, open('result.json', 'w'))
 		return {'node_a':red_node,'node_b':blue_node,'edge':query_edges}
-		# return json.dumps({'node_a':red_node, 'node_b':blue_node, 'edge':query_edges})
 				
 							
 	def query_links_v2(self, type_a, type_b, relation_type, entities_left = [], entities_right = [], num_edges=5, num_pps=1):
@@ -563,7 +577,7 @@ class data_utils(object):
 					node['sents'].append(temp)
 				node['group'] = 2 
 				nodes.append(node)
-		print json.dumps({'edges': result['edge'], 'nodes': nodes})
+		# print json.dumps({'edges': result['edge'], 'nodes': nodes})
 		return {'edges': result['edge'], 'nodes': nodes}
  
 	def query_links(self, type_a, type_b, relation_type, num_edges=5, num_pps=1):
